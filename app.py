@@ -132,6 +132,11 @@ if "requested_page" not in st.session_state:
 if "page_selector" not in st.session_state:
     st.session_state.page_selector = "Home"
 
+# NEW: archive for brain dumps (per session)
+if "brain_dump_archive" not in st.session_state:
+    # each entry: {"timestamp": str, "text": str}
+    st.session_state.brain_dump_archive = []
+
 
 # =========================================================
 # NAVIGATION HELPERS
@@ -211,7 +216,6 @@ def compute_streak_days():
     if not st.session_state.mood_log:
         return 0
 
-    # collect all dates as datetime.date
     dates = []
     for entry in st.session_state.mood_log:
         if len(entry) >= 1:
@@ -262,7 +266,7 @@ if page == "Home":
     else:
         st.markdown("### 👋 Hi! Enter your name to begin 🌿")
 
-    # --- Streak display (if any history) ---
+    # --- Streak display ---
     streak = compute_streak_days()
     if streak > 0:
         st.markdown(f"**🔥 Check-in streak:** {streak} day{'s' if streak != 1 else ''}")
@@ -282,11 +286,9 @@ if page == "Home":
         st.session_state.mood_log.append((date_str, time_now, mood, score))
         st.success(f"Logged your mood: **{mood}** at {time_now} 💜")
 
-        # recompute streak
         streak = compute_streak_days()
         st.info(f"🔥 You’ve checked in {streak} day{'s' if streak != 1 else ''} in a row.")
 
-        # motivational quote
         quote_choices = MOOD_QUOTES.get(mood, [])
         if quote_choices:
             quote = random.choice(quote_choices)
@@ -347,17 +349,15 @@ if page == "Home":
             plan_step("🧠 Brain Dump", "Go to Brain Dump", "plan10", "Brain Dump")
             plan_step("🫁 Short Breathing", "Go to Breathing", "plan11", "Breathing")
 
-        else:  # 😐 Okay
+        else:
             plan_step("🫁 Breathing – 30–60 sec", "Go to Breathing", "plan12", "Breathing")
             plan_step("🧠 Optional Brain Dump", "Go to Brain Dump", "plan13", "Brain Dump")
 
     # --- SOS button on Home ---
     st.markdown("---")
     st.markdown("### Need urgent support?")
-    sos_col = st.container()
-    with sos_col:
-        if st.button("I'm panicking — help me now ⚠️", key="sos_home"):
-            go_to("SOS")
+    if st.button("I'm panicking — help me now ⚠️", key="sos_home"):
+        go_to("SOS")
 
     # --- Mood history chart ---
     if st.session_state.mood_log:
@@ -423,11 +423,13 @@ elif page == "Breathing":
 
 
 # =========================================================
-# BRAIN DUMP PAGE
+# BRAIN DUMP PAGE (with Archive + Clear All + Privacy Note)
 # =========================================================
 elif page == "Brain Dump":
     back_to_home()
     st.header("🧠 Brain Dump")
+
+    st.caption("Your entries are only stored in this browser session and are not shared or saved to any external database.")
 
     length = st.selectbox(
         "How long do you want to write?",
@@ -435,7 +437,7 @@ elif page == "Brain Dump":
     )
     total = int(length.split()[0])
 
-    txt = st.text_area("Write whatever is on your mind…")
+    txt = st.text_area("Write whatever is on your mind…", key="brain_dump_input")
 
     if st.button(f"Start {length} Timer"):
         timer = st.empty()
@@ -446,7 +448,31 @@ elif page == "Brain Dump":
         st.success("Nice job letting it out 💜")
 
         if txt.strip():
-            pastel_box(f"### You wrote:<br>{txt}")
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+            entry = {"timestamp": timestamp, "text": txt.strip()}
+            st.session_state.brain_dump_archive.append(entry)
+            pastel_box(f"### Saved entry from {timestamp}:<br>{txt}")
+
+    # Archive display
+    if st.session_state.brain_dump_archive:
+        st.markdown("---")
+        st.subheader("🗂 Brain Dump Archive (this session)")
+        st.caption("Only visible to you in this session. You can delete individual entries or clear them all.")
+
+        # Clear all button
+        if st.button("Clear all entries", key="clear_bd_all"):
+            st.session_state.brain_dump_archive = []
+            st.rerun()
+
+        # show newest first
+        for display_index, entry in enumerate(reversed(st.session_state.brain_dump_archive)):
+            actual_index = len(st.session_state.brain_dump_archive) - 1 - display_index
+            label = f"Entry {display_index + 1} — {entry['timestamp']}"
+            with st.expander(label):
+                st.write(entry["text"])
+                if st.button("Delete this entry", key=f"delete_bd_{actual_index}"):
+                    st.session_state.brain_dump_archive.pop(actual_index)
+                    st.rerun()
 
 
 # =========================================================
@@ -473,10 +499,10 @@ elif page == "Body Reset":
 
     if st.button(f"Start {length} Routine"):
         prog = st.progress(0)
-        txt = st.empty()
+        txt_label = st.empty()
 
         for sec in range(total):
-            txt.write(f"⏳ {sec+1}/{total} seconds")
+            txt_label.write(f"⏳ {sec+1}/{total} seconds")
             prog.progress((sec+1)/total)
             time.sleep(1)
 
